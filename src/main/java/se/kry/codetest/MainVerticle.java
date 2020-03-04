@@ -7,6 +7,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.StaticHandler;
+import se.kry.codetest.data.service.ServicesService;
 
 import java.util.HashMap;
 import java.util.List;
@@ -15,8 +16,8 @@ import java.util.stream.Collectors;
 public class MainVerticle extends AbstractVerticle {
 
   private HashMap<String, String> services = new HashMap<>();
-  //TODO use this
   private DBConnector connector;
+  private ServicesService servicesService;
   private BackgroundPoller poller = new BackgroundPoller();
 
   @Override
@@ -24,7 +25,10 @@ public class MainVerticle extends AbstractVerticle {
     connector = new DBConnector(vertx);
     Router router = Router.router(vertx);
     router.route().handler(BodyHandler.create());
-    services.put("https://www.kry.se", "UNKNOWN");
+//    services.put("https://www.kry.se", "UNKNOWN");
+    servicesService = new ServicesService(connector);
+    servicesService.addService("https://www.kry.se");
+    updateRoutes();
     vertx.setPeriodic(1000 * 60, timerId -> poller.pollServices(services));
     setRoutes(router);
     vertx
@@ -40,9 +44,16 @@ public class MainVerticle extends AbstractVerticle {
         });
   }
 
+  private void updateRoutes() {
+    servicesService.getAllServices().forEach(service -> {
+      services.put(service.getUrl(), "UNKNOWN");
+    });
+  }
+
   private void setRoutes(Router router){
     router.route("/*").handler(StaticHandler.create());
     router.get("/service").handler(req -> {
+      updateRoutes();
       List<JsonObject> jsonServices = services
           .entrySet()
           .stream()
@@ -57,7 +68,9 @@ public class MainVerticle extends AbstractVerticle {
     });
     router.post("/service").handler(req -> {
       JsonObject jsonBody = req.getBodyAsJson();
-      services.put(jsonBody.getString("url"), "UNKNOWN");
+      //services.put(jsonBody.getString("url"), "UNKNOWN");
+      servicesService.addService(jsonBody.getString("url"));
+      updateRoutes();
       req.response()
           .putHeader("content-type", "text/plain")
           .end("OK");
